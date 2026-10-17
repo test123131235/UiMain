@@ -411,27 +411,34 @@ Library.CursorSize = 32 -- change if the image looks too big/small
 
 local OriginalMouseIconEnabled = UserInputService.MouseIconEnabled
 
-local CursorGui = Instance.new("ScreenGui")
-CursorGui.Name = "\0"
-CursorGui.IgnoreGuiInset = true
-CursorGui.DisplayOrder = 2147483647
-CursorGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-CursorGui.ResetOnSpawn = false
-CursorGui.Parent = GETH()
+local CursorGui, CursorLabel
 
-local CursorLabel = Instance.new("ImageLabel")
-CursorLabel.Name = "cursor"
-CursorLabel.BackgroundTransparency = 1
-CursorLabel.BorderSizePixel = 0
-CursorLabel.Image = Library.CursorImage
-CursorLabel.Size = UDim2.fromOffset(Library.CursorSize, Library.CursorSize)
-CursorLabel.ZIndex = 10000
-CursorLabel.Active = false
-CursorLabel.Parent = CursorGui
+-- everything cursor-related is wrapped so it can never stop the library from loading
+local CursorOk, CursorErr = pcall(function()
+    CursorGui = Instance.new("ScreenGui")
+    CursorGui.Name = "\0"
+    CursorGui.IgnoreGuiInset = true
+    CursorGui.DisplayOrder = 999999
+    CursorGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    CursorGui.ResetOnSpawn = false
+    CursorGui.Parent = GETH()
 
-Library.CursorGui = CursorGui
+    CursorLabel = Instance.new("ImageLabel")
+    CursorLabel.Name = "cursor"
+    CursorLabel.BackgroundTransparency = 1
+    CursorLabel.BorderSizePixel = 0
+    CursorLabel.Image = Library.CursorImage
+    CursorLabel.Size = UDim2.fromOffset(Library.CursorSize, Library.CursorSize)
+    CursorLabel.ZIndex = 10000
+    CursorLabel.Active = false
+    CursorLabel.Parent = CursorGui
+
+    Library.CursorGui = CursorGui
+end)
+if not CursorOk then warn("[Library] custom cursor disabled: " .. tostring(CursorErr)) end
 
 function Library.SetCursorImage(Self, Image, Size)
+    if not CursorLabel then return end
     CursorLabel.Image = Image
     if Size then CursorLabel.Size = UDim2.fromOffset(Size, Size) end
 end
@@ -439,21 +446,27 @@ end
 -- Brings back the original Roblox cursor and removes ours
 function Library.RestoreCursor(Self)
     pcall(function() UserInputService.MouseIconEnabled = OriginalMouseIconEnabled end)
-    if CursorGui then CursorGui:Destroy() end
+    if CursorGui then pcall(function() CursorGui:Destroy() end) end
+    CursorGui, CursorLabel = nil, nil
 end
 
-Library:Connect(RunService.RenderStepped, function()
-    -- hide ours while the game locks the mouse to the screen centre (shiftlock / first person)
-    if UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter then
-        CursorLabel.Visible = false
-        UserInputService.MouseIconEnabled = OriginalMouseIconEnabled
-        return
-    end
-    local m = UserInputService:GetMouseLocation()
-    CursorLabel.Position = UDim2.fromOffset(m.X, m.Y)
-    CursorLabel.Visible = true
-    UserInputService.MouseIconEnabled = false -- keeps the game from re-enabling the default cursor
-end)
+if CursorOk then
+    Library:Connect(RunService.RenderStepped, function()
+        if not CursorLabel then return end
+        pcall(function()
+            -- hide ours while the game locks the mouse to the screen centre (shiftlock / first person)
+            if UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter then
+                CursorLabel.Visible = false
+                UserInputService.MouseIconEnabled = OriginalMouseIconEnabled
+                return
+            end
+            local m = UserInputService:GetMouseLocation()
+            CursorLabel.Position = UDim2.fromOffset(m.X, m.Y)
+            CursorLabel.Visible = true
+            UserInputService.MouseIconEnabled = false -- keeps the game from re-enabling the default cursor
+        end)
+    end)
+end
 
 ----------------------------------------------------------------------
 -- Small helpers
