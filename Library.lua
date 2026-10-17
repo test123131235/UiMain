@@ -4,6 +4,7 @@
     dropdowns, textboxes, image-based colorpicker, pills, watermark, notifications).
     On top of it: Linoria-style API (CreateWindow, Toggles/Options, Idx + Info elements,
     Toggle:AddColorPicker / AddKeyPicker, AddButton, AddLabel, Groupbox aliases) so SaveManager works.
+    Custom cursor (rbxassetid://89116795437925) is restored to the default Roblox cursor on unload.
 ]]
 
 local cRF = cloneref or function(Object) return Object end
@@ -130,6 +131,7 @@ Library.FontBold = CustomFont:New("InterBold", 400, "Regular", {
 ----------------------------------------------------------------------
 Library.Exit = function(Self)
     Self.Unloaded = true
+    if Self.RestoreCursor then Self:RestoreCursor() end -- restores the original Roblox cursor
     for _, fn in ipairs(Self.UnloadCallbacks) do pcall(fn) end
     for _, Connection in pairs(Library.Connections) do pcall(function() Connection:Disconnect() end) end
     for _, Thread in pairs(Library.Threads) do pcall(coroutine.close, Thread) end
@@ -400,6 +402,58 @@ Library.Holder.Name = "\0"
 Library.Holder.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 Library.Holder.ResetOnSpawn = false
 Library.Holder.Parent = GETH()
+
+----------------------------------------------------------------------
+-- Custom cursor
+----------------------------------------------------------------------
+Library.CursorImage = "rbxassetid://89116795437925"
+Library.CursorSize = 32 -- change if the image looks too big/small
+
+local OriginalMouseIconEnabled = UserInputService.MouseIconEnabled
+
+local CursorGui = Instance.new("ScreenGui")
+CursorGui.Name = "\0"
+CursorGui.IgnoreGuiInset = true
+CursorGui.DisplayOrder = 2147483647
+CursorGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+CursorGui.ResetOnSpawn = false
+CursorGui.Parent = GETH()
+
+local CursorLabel = Instance.new("ImageLabel")
+CursorLabel.Name = "cursor"
+CursorLabel.BackgroundTransparency = 1
+CursorLabel.BorderSizePixel = 0
+CursorLabel.Image = Library.CursorImage
+CursorLabel.Size = UDim2.fromOffset(Library.CursorSize, Library.CursorSize)
+CursorLabel.ZIndex = 10000
+CursorLabel.Active = false
+CursorLabel.Parent = CursorGui
+
+Library.CursorGui = CursorGui
+
+function Library.SetCursorImage(Self, Image, Size)
+    CursorLabel.Image = Image
+    if Size then CursorLabel.Size = UDim2.fromOffset(Size, Size) end
+end
+
+-- Brings back the original Roblox cursor and removes ours
+function Library.RestoreCursor(Self)
+    pcall(function() UserInputService.MouseIconEnabled = OriginalMouseIconEnabled end)
+    if CursorGui then CursorGui:Destroy() end
+end
+
+Library:Connect(RunService.RenderStepped, function()
+    -- hide ours while the game locks the mouse to the screen centre (shiftlock / first person)
+    if UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter then
+        CursorLabel.Visible = false
+        UserInputService.MouseIconEnabled = OriginalMouseIconEnabled
+        return
+    end
+    local m = UserInputService:GetMouseLocation()
+    CursorLabel.Position = UDim2.fromOffset(m.X, m.Y)
+    CursorLabel.Visible = true
+    UserInputService.MouseIconEnabled = false -- keeps the game from re-enabling the default cursor
+end)
 
 ----------------------------------------------------------------------
 -- Small helpers
