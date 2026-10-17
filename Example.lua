@@ -1,192 +1,116 @@
--- Example script for the Feral UI Library (Linoria-style API)
--- Host Library.lua and SaveManager.lua somewhere (GitHub raw, etc.) and change `repo`,
--- or swap the loadstring(game:HttpGet(...)) lines for loadstring(readfile("Library.lua"))().
+-- Example for the Feral UI Library. Loads Library + SaveManager from the UiMain repo.
 
-local repo = "https://raw.githubusercontent.com/YOURNAME/YOURREPO/main/"
+local repo = "https://raw.githubusercontent.com/test123131235/UiMain/main/"
 
 local Library     = loadstring(game:HttpGet(repo .. "Library.lua"))()
 local SaveManager = loadstring(game:HttpGet(repo .. "SaveManager.lua"))()
 
 local Window = Library:CreateWindow({
     Title = "Feral Hub",
-    SubTitle = "Example",
-    -- Logo = "rbxassetid://121449270899000",
-    Center = true,
-    AutoShow = true,
-    TabPadding = 6,
+    GameName = "Example",
+    Logo = "rbxassetid://121449270899000",
 })
 
-local Tabs = {
-    Main = Window:AddTab("Main"),
-    ["UI Settings"] = Window:AddTab("UI Settings"),
-}
+Window:SetWatermark("Feral Hub — DEV", "rbxassetid://104479390541433")
+Window:AddFPSPill()
+Window:AddTimePill()
+Window:AddCoordsPill()
+Window:AddUsernamePill()
+
+local MainTab     = Window:AddTab("Main", "rbxassetid://106606600179475")
+local VisualsTab  = Window:AddTab("Visuals", "rbxassetid://106606600179475")
+local SettingsTab = Window:AddTab("Settings", "rbxassetid://106606600179475")
 
 ----------------------------------------------------------------------
--- Left groupbox
+-- Main tab -> subtabs -> sections
 ----------------------------------------------------------------------
-local LeftGroupBox = Tabs.Main:AddLeftGroupbox("Groupbox")
+local Combat = MainTab:AddSubTab("Combat")
+local Movement = MainTab:AddSubTab("Movement")
 
-LeftGroupBox:AddToggle("MyToggle", {
-    Text = "This is a toggle",
-    Default = true,
-    Tooltip = "This is a tooltip",
-    Callback = function(Value)
-        print("[cb] MyToggle changed to:", Value)
-    end,
+local Aim = Combat:AddSection("Aimbot", "Left")
+
+Aim:AddToggle("AimbotEnabled", {
+    Text = "Enabled",
+    Default = false,
+    Callback = function(v) print("Aimbot:", v) end,
 })
 
-Toggles.MyToggle:OnChanged(function()
-    print("MyToggle changed to:", Toggles.MyToggle.Value)
-end)
+-- toggle with colour picker (original look) + keybind
+local Fov = Aim:AddToggle("FovCircle", { Text = "FOV circle", Default = false })
+Fov:AddColorPicker("FovColor", { Default = Color3.fromRGB(255, 60, 60), Callback = function(c) print("FOV color", c) end })
+Fov:AddKeyPicker("FovKey", { Default = "H", Mode = "Toggle", SyncToggleState = true })
 
--- Toggle with a color picker and a keybind attached
-LeftGroupBox:AddToggle("ColorToggle", { Text = "Toggle with addons", Default = false })
-    :AddColorPicker("ToggleColor", {
-        Default = Color3.fromRGB(255, 60, 60),
-        Title = "Some color",
-        Callback = function(Value) print("[cb] Toggle color changed:", Value) end,
-    })
-Toggles.ColorToggle:AddKeyPicker("ToggleKey", {
-    Default = "E",
-    Mode = "Toggle",
-    Text = "Toggle keybind",
-    SyncToggleState = true,
+Aim:AddSlider("AimFov", {
+    Text = "FOV",
+    Min = 0, Max = 360, Default = 90,
+    Callback = function(v) end,
+})
+Aim:AddSlider("AimSmooth", {
+    Text = "Smoothness",
+    Min = 0, Max = 1, Default = 0.25, Decimals = 2,
+    Callback = function(v) end,
 })
 
-LeftGroupBox:AddButton({
-    Text = "Button",
-    Func = function() print("You clicked a button!") end,
-    DoubleClick = false,
-    Tooltip = "This is the main button",
-}):AddButton({
-    Text = "Sub button",
-    Func = function() print("You clicked a sub button!") end,
-    Tooltip = "This is a sub button",
+local Target = Combat:AddSection("Targeting", "Right")
+
+Target:AddDropdown("AimPart", {
+    Title = "Target part",
+    Options = { "Head", "Torso", "Random" },
+    Default = "Head",
+    Callback = function(v) end,
 })
-
-LeftGroupBox:AddButton({
-    Text = "Double click button",
-    DoubleClick = true,
-    Func = function() print("You clicked a double click button!") end,
-})
-
-LeftGroupBox:AddDivider()
-
-LeftGroupBox:AddLabel("This is a label")
-LeftGroupBox:AddLabel("This is a label\n\nthat wraps its text!", true)
-
-LeftGroupBox:AddLabel("Label with a color picker"):AddColorPicker("LabelColor", {
-    Default = Color3.fromRGB(0, 170, 255),
-    Title = "Label color",
-})
-LeftGroupBox:AddLabel("Label with a keybind"):AddKeyPicker("LabelKey", {
-    Default = "RightControl",
-    Mode = "Hold",
-    Text = "Hold keybind",
-})
-
-LeftGroupBox:AddDivider()
-
-LeftGroupBox:AddSlider("MySlider", {
-    Text = "This is my slider",
-    Default = 0,
-    Min = 0,
-    Max = 5,
-    Rounding = 1,
-    Compact = false,
-    Suffix = "s",
-    Callback = function(Value) print("[cb] MySlider was changed! New value:", Value) end,
-})
-
-LeftGroupBox:AddSlider("CompactSlider", { Text = "Compact slider", Default = 50, Min = 0, Max = 100, Rounding = 0, Compact = true })
-
-Options.MySlider:OnChanged(function()
-    print("MySlider was changed! New value:", Options.MySlider.Value)
-end)
-Options.MySlider:SetValue(3)
-
-LeftGroupBox:AddInput("MyTextbox", {
-    Default = "My textbox!",
-    Numeric = false,
-    Finished = false,
-    Text = "This is a textbox",
-    Tooltip = "This is a tooltip",
-    Placeholder = "Placeholder text",
-    Callback = function(Value) print("[cb] Text updated. New text:", Value) end,
-})
-
-LeftGroupBox:AddDropdown("MyDropdown", {
-    Values = { "This", "is", "a", "dropdown" },
-    Default = 1, -- index or value
-    Multi = false,
-    Text = "A dropdown",
-    Tooltip = "This is a tooltip",
-    Callback = function(Value) print("[cb] Dropdown got changed. New value:", Value) end,
-})
-Options.MyDropdown:OnChanged(function() print("Dropdown got changed. New value:", Options.MyDropdown.Value) end)
-Options.MyDropdown:SetValue("This")
-
-LeftGroupBox:AddDropdown("MyMultiDropdown", {
-    Values = { "This", "is", "a", "dropdown" },
-    Default = 1,
+Target:AddDropdown("AimChecks", {
+    Title = "Checks",
     Multi = true,
-    Text = "A multi dropdown",
-    Tooltip = "This is a tooltip",
-    Callback = function(Value)
-        local keys = {}
-        for k in next, Value do table.insert(keys, k) end
-        print("[cb] Multi dropdown got changed:", table.concat(keys, ", "))
-    end,
+    Options = { "Team", "Visible", "Alive" },
+    Default = { "Alive" },
+    Callback = function(v) end,
 })
-Options.MyMultiDropdown:SetValue({ This = true, is = true })
-
-LeftGroupBox:AddDropdown("NullableDropdown", {
-    Values = { "One", "Two", "Three" },
-    Default = 1,
-    AllowNull = true,
-    Text = "Nullable dropdown",
+Target:AddTextbox("AimWhitelist", {
+    Placeholder = "Whitelist player...",
+    Icon = "rbxassetid://107972121937062",
+    Callback = function(v) print("Whitelist:", v) end,
 })
-
-----------------------------------------------------------------------
--- Right side: tabbox
-----------------------------------------------------------------------
-local TabBox = Tabs.Main:AddRightTabbox()
-local Tab1 = TabBox:AddTab("Tab 1")
-Tab1:AddToggle("Tab1Toggle", { Text = "Tab1 toggle" })
-local Tab2 = TabBox:AddTab("Tab 2")
-Tab2:AddToggle("Tab2Toggle", { Text = "Tab2 toggle" })
-
-local RightGroupBox = Tabs.Main:AddRightGroupbox("Notifications")
-RightGroupBox:AddButton("Notify", function()
-    Library:Notify("Hello from the Feral library!", 4)
-end)
-RightGroupBox:AddSlider("AccentHue", { Text = "Accent hue", Default = 58, Min = 0, Max = 100, Rounding = 0 })
-Options.AccentHue:OnChanged(function()
-    local c = Color3.fromHSV(Options.AccentHue.Value / 100, 0.9, 1)
-    Library:SetAccent(c)
+Target:AddTextIndicator("AimStatus", { Default = "Idle", Icon = "rbxassetid://102638872351950" })
+Target:AddLabel("Right click the keybind to change its mode")
+Target:AddButton("Print config", function()
+    print("Aimbot enabled:", Toggles.AimbotEnabled.Value, "| FOV:", Options.AimFov.Value)
+end):AddButton("Notify", function()
+    Library:Notify("Example", "Hello from Feral!", 3)
 end)
 
-----------------------------------------------------------------------
--- UI Settings
-----------------------------------------------------------------------
-Library:SetWatermark("Feral Hub | Example")
-
-local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu")
-MenuGroup:AddButton("Unload", function() Library:Unload() end)
-MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind", { Default = "RightShift", Mode = "Toggle", Text = "Menu keybind" })
-Library.ToggleKeybind = Options.MenuKeybind -- allows the menu keybind to be rebound
-
-Library:OnUnload(function()
-    print("Unloaded!")
-    Library.Unloaded = true
-end)
+local Move = Movement:AddSection("Speed", "Left")
+Move:AddToggle("SpeedEnabled", { Text = "Speed", Default = false })
+Move:AddSlider("SpeedValue", { Text = "Speed", Min = 16, Max = 200, Default = 16 })
+Move:AddColorpicker("TrailColor", { Title = "Trail color", Default = Color3.fromRGB(0, 170, 255) })
 
 ----------------------------------------------------------------------
--- Save manager
+-- Visuals tab (one subtab)
 ----------------------------------------------------------------------
+local Esp = VisualsTab:AddSubTab("ESP")
+local EspSection = Esp:AddSection("Players", "Left")
+EspSection:AddToggle("EspBox", {
+    Text = "Boxes", Default = true,
+    Color = Color3.fromRGB(255, 255, 255), ColorFlag = "EspBoxColor", -- original style color toggle still works
+})
+EspSection:AddToggle("EspName", { Text = "Names", Default = false })
+
+----------------------------------------------------------------------
+-- Settings tab -> Config subtab
+----------------------------------------------------------------------
+local Config = SettingsTab:AddSubTab("Config")
+local MenuSection = Config:AddSection("Menu", "Left")
+MenuSection:AddLabel("Menu keybind"):AddKeyPicker("MenuKeybind", { Default = "X", Mode = "Toggle" })
+Library.ToggleKeybind = Options.MenuKeybind
+MenuSection:AddButton("Unload", function() Library:Exit() end)
+
 SaveManager:SetLibrary(Library)
 SaveManager:IgnoreThemeSettings()
 SaveManager:SetIgnoreIndexes({ "MenuKeybind" })
 SaveManager:SetFolder("FeralHub/Example")
-SaveManager:BuildConfigSection(Tabs["UI Settings"])
+SaveManager:BuildConfigSection(Config) -- adds the "Configuration" section on the right
 SaveManager:LoadAutoloadConfig()
+
+task.delay(1, function()
+    Library:Notify("Example", "Loaded", 3)
+end)
