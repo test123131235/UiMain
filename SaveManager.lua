@@ -173,7 +173,7 @@ function SaveManager:BuildConfigSection(tab)
 
     local section = tab:AddRightGroupbox("Configuration")
 
-    section:AddInput("SaveManager_ConfigName", { Text = "Config name" })
+    section:AddTextbox("SaveManager_ConfigName", { Placeholder = "Config name..." })
     section:AddDropdown("SaveManager_ConfigList", { Text = "Config list", Values = self:RefreshConfigList(), AllowNull = true })
     section:AddDivider()
 
