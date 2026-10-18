@@ -5,6 +5,10 @@
     On top of it: Linoria-style API (CreateWindow, Toggles/Options, Idx + Info elements,
     Toggle:AddColorPicker / AddKeyPicker, AddButton, AddLabel, Groupbox aliases) so SaveManager works.
     Custom cursor (rbxassetid://89116795437925) is restored to the default Roblox cursor on unload.
+
+    Always English: Roblox auto-translates GUI text into the player's language (e.g. "Time" -> "Zeit").
+    Every object this library creates has AutoLocalize = false, and anything parented into the
+    library's ScreenGuis later is forced to AutoLocalize = false as well.
 ]]
 
 local cRF = cloneref or function(Object) return Object end
@@ -97,6 +101,25 @@ Library.GetEasingDirection = function(Self, Direction)
 end
 
 Library.Theme = Themes.Preset
+
+----------------------------------------------------------------------
+-- Force English (disable Roblox auto-translation)
+----------------------------------------------------------------------
+local function NoLocalize(Object)
+    if typeof(Object) == "Instance" and Object:IsA("GuiBase2d") then
+        pcall(function() Object.AutoLocalize = false end)
+    end
+end
+
+-- Locks a ScreenGui to English: itself, everything already inside it, and anything added later.
+local function LockEnglish(Gui)
+    NoLocalize(Gui)
+    pcall(function() Gui.RootLocalizationTable = nil end)
+    for _, Descendant in ipairs(Gui:GetDescendants()) do NoLocalize(Descendant) end
+    local Conn = Gui.DescendantAdded:Connect(NoLocalize)
+    table.insert(Library.Connections, Conn)
+end
+Library.LockEnglish = function(Self, Gui) LockEnglish(Gui) end
 
 ----------------------------------------------------------------------
 -- Fonts (same Inter files as the original)
@@ -401,6 +424,7 @@ Library.Holder.IgnoreGuiInset = true
 Library.Holder.Name = "\0"
 Library.Holder.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 Library.Holder.ResetOnSpawn = false
+LockEnglish(Library.Holder)
 Library.Holder.Parent = GETH()
 
 ----------------------------------------------------------------------
@@ -421,10 +445,12 @@ local CursorOk, CursorErr = pcall(function()
     CursorGui.DisplayOrder = 999999
     CursorGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     CursorGui.ResetOnSpawn = false
+    LockEnglish(CursorGui)
     CursorGui.Parent = GETH()
 
     CursorLabel = Instance.new("ImageLabel")
     CursorLabel.Name = "cursor"
+    CursorLabel.AutoLocalize = false
     CursorLabel.BackgroundTransparency = 1
     CursorLabel.BorderSizePixel = 0
     CursorLabel.Image = Library.CursorImage
@@ -474,6 +500,7 @@ end
 local function N(class, props, parent)
     local o = Instance.new(class)
     if o:IsA("GuiObject") then o.BorderSizePixel = 0 end
+    if o:IsA("GuiBase2d") then o.AutoLocalize = false end -- never auto-translate: keep the UI in English
     for k, v in pairs(props or {}) do o[k] = v end
     o.Parent = parent
     return o
