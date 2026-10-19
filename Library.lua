@@ -35,7 +35,16 @@
 
     Window:  Get, Set, SetMany, Values, ApplyTo, OnChange, SetOptions, GetOptions, RunCallbacks, Open, Close, Toggle, IsOpen,
              SetTitle, SetVisible, Notify, SelectTab, GetTab, Destroy
-    Library: Unload, OnUnload, Notify, ToggleKeybind (= an Options key picker that opens/closes the menu)
+    Library: Unload, OnUnload, Notify, ToggleKeybind, CreateStats
+
+    ---- Stats panels (pop-out windows with  label ..... value  rows) -----------------------------------
+    local Stats = Library:CreateStats({ Title = "Killer", Color = Color3.fromRGB(188,58,52), Width = 270,
+        Rows = { { key = "uptime", label = "Uptime", clock = true }, { key = "kills", label = "Kills", color = Color3.fromRGB(255,132,226) } } })
+    Stats:AddStat("deaths", "Deaths", { Color = Color3.fromRGB(255,90,90) })      -- add rows any time
+    Stats:Set("kills", 5)  Stats:Increment("kills")  Stats:Get("kills")  Stats:Reset()  Stats:SetMany({ kills = 1 })
+    Stats:SetTitle("x")  Stats:SetHeaderColor(c)  Stats:SetColor(key, c)  Stats:SetLabel(key, "x")  Stats:SetVisible(b)  Stats:Toggle()
+    Stats:SetCollapsed(b)  Stats:SetPosition(UDim2, anchor)  Stats:Poll(key, seconds, function() return value end)  Stats:Destroy()
+    Row format: "number" (default, 1,234) | "clock" (1:51) | "text" | function(value) -> string. Drag the header; click it to collapse. (= an Options key picker that opens/closes the menu)
 ]]
 
 local cloneref = cloneref or function(i) return i end
@@ -2263,6 +2272,297 @@ function Window:Destroy()
 	if self._registry and self._registry[self.Folder] == self then self._registry[self.Folder] = nil end
 end
 
+
+--------------------------------------------------------------------------------------------------
+-- Stats panels: small pop-out windows with rows of  "label ........ value"  (Library:CreateStats)
+--------------------------------------------------------------------------------------------------
+local Stats = {}
+Stats.__index = Stats
+
+local function formatCount(value)
+	if type(value) ~= "number" or value ~= math.floor(value) or math.abs(value) >= 9007199254740992 then return tostring(value) end
+	local s = tostring(math.abs(value)):reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
+	return (value < 0 and "-" or "") .. s
+end
+
+local function formatClock(seconds)
+	local total = math.max(0, math.floor(tonumber(seconds) or 0))
+	local h, m, s = math.floor(total / 3600), math.floor(total % 3600 / 60), total % 60
+	if h > 0 then return string.format("%d:%02d:%02d", h, m, s) end
+	return string.format("%d:%02d", m, s)
+end
+
+Library.FormatCount = formatCount
+Library.FormatClock = formatClock
+Library._stats = {}
+
+-- opts: Title, Id, Color (header colour), Width, Position, AnchorPoint, RowHeight, TitleSize, RowSize,
+--       Draggable, Collapsible, StartCollapsed, Rows = { {key, label, color, default, format, clock}, ... }
+function Library:CreateStats(opts)
+	opts = opts or {}
+	local self = setmetatable({}, Stats)
+	self._opt = {
+		Title = opts.Title or "Stats", Width = opts.Width or 270, RowHeight = opts.RowHeight or 30,
+		TitleSize = opts.TitleSize or 26, RowSize = opts.RowSize or 21,
+		Position = opts.Position or UDim2.new(1, -12, 0.5, 0), AnchorPoint = opts.AnchorPoint or Vector2.new(1, 0.5),
+		Draggable = opts.Draggable ~= false, Collapsible = opts.Collapsible ~= false,
+		Color = opts.Color or Color3.fromRGB(188, 58, 52), DisplayOrder = opts.DisplayOrder or 12,
+	}
+	self._rows, self._order, self._values, self._connections, self._destroyed = {}, 0, {}, {}, false
+
+	-- running the script twice replaces the old panel with the same Id
+	if opts.Id then
+		genv.__CinderStats = genv.__CinderStats or {}
+		local old = genv.__CinderStats[opts.Id]
+		if old and old ~= self then pcall(function() old:Destroy() end) end
+		genv.__CinderStats[opts.Id] = self
+		self._id = opts.Id
+	end
+
+	local parent, protected = getGuiParent()
+	local gui = create("ScreenGui", { Name = randomName(), ResetOnSpawn = false, IgnoreGuiInset = true, ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = self._opt.DisplayOrder })
+	if protected then protect(gui) end
+	local function lock(o)
+		if o:IsA("GuiBase2d") then pcall(function() o.AutoLocalize = false end) end
+	end
+	lock(gui)
+	table.insert(self._connections, gui.DescendantAdded:Connect(lock))
+	gui.Parent = parent
+	self.Gui = gui
+
+	local root = create("Frame", {
+		Name = "Panel", BackgroundColor3 = Theme.Background, BackgroundTransparency = Theme.BackgroundTransparency, BorderSizePixel = 0,
+		Size = UDim2.new(0, self._opt.Width, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, Position = self._opt.Position, AnchorPoint = self._opt.AnchorPoint,
+	}, gui)
+	self.Root = root
+	addEdge(root, Theme.Ink, 0)
+
+	local content = create("Frame", { Name = "Content", BackgroundTransparency = 1, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, ZIndex = 1 }, root)
+	create("UIListLayout", { FillDirection = Enum.FillDirection.Vertical, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 6) }, content)
+	create("UIPadding", { PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 10), PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10) }, content)
+
+	local header = create("TextButton", {
+		Name = "Header", Text = "", AutoButtonColor = false, BackgroundColor3 = self._opt.Color, BackgroundTransparency = 0.05, BorderSizePixel = 0,
+		Size = UDim2.new(1, 0, 0, self._opt.RowHeight + 8), LayoutOrder = 0,
+	}, content)
+	addEdge(header, Theme.Ink, 1)
+	local title = textLabel(self._opt.Title, self._opt.TitleSize, Enum.TextXAlignment.Left)
+	title.Name = "Title"
+	title.Size = UDim2.new(1, -16, 1, 0)
+	title.Position = UDim2.new(0, 10, 0, 0)
+	title.ZIndex = 2
+	title.Parent = header
+	self.Header, self.Title = header, title
+
+	local body = create("Frame", { Name = "Body", BackgroundTransparency = 1, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 1 }, content)
+	create("UIListLayout", { FillDirection = Enum.FillDirection.Vertical, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 2) }, body)
+	self.Body = body
+
+	-- drag by the header; a click without moving collapses / expands
+	local dragging, moved, startMouse, startPos = false, false, nil, nil
+	table.insert(self._connections, header.InputBegan:Connect(function(input)
+		if not isPointer(input) then return end
+		dragging, moved, startMouse = true, false, input.Position
+		startPos = root.AbsolutePosition - (gui.AbsolutePosition)
+	end))
+	table.insert(self._connections, UserInputService.InputChanged:Connect(function(input)
+		if not dragging or self._destroyed or not self._opt.Draggable then return end
+		if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then return end
+		local d = input.Position - startMouse
+		if d.Magnitude > 3 then moved = true end
+		if moved then
+			root.AnchorPoint = Vector2.new(0, 0)
+			root.Position = UDim2.fromOffset(math.floor(startPos.X + d.X), math.floor(startPos.Y + d.Y))
+		end
+	end))
+	table.insert(self._connections, UserInputService.InputEnded:Connect(function(input)
+		if not isPointer(input) or not dragging then return end
+		dragging = false
+		if not moved and self._opt.Collapsible then self:SetCollapsed(not self._collapsed) end
+	end))
+
+	table.insert(Library._stats, self)
+	for _, def in ipairs(opts.Rows or {}) do self:AddStat(def) end
+	if opts.StartCollapsed then self:SetCollapsed(true) end
+	return self
+end
+
+function Window:CreateStats(opts) return Library:CreateStats(opts) end
+
+-- def: { key, label, color, default, format = "number" | "clock" | "text" | function(value) -> string, clock = true (auto-counting timer) }
+-- also accepts AddStat("key", "Label", { Color = ..., Default = ..., Format = ... })
+function Stats:AddStat(def, label, extra)
+	if type(def) == "string" then
+		local info = type(extra) == "table" and extra or {}
+		def = { key = def, label = label, color = info.Color or info.color, default = info.Default, format = info.Format, clock = info.Clock }
+	end
+	assert(type(def) == "table" and def.key ~= nil, "AddStat needs a key")
+	local key = tostring(def.key)
+	if self._destroyed or self._rows[key] then return self end
+	self._order += 1
+	local n = self._order
+	if n > 1 then
+		local rule = makeRule(n)
+		rule.LayoutOrder = n * 10 - 1
+		rule.Parent = self.Body
+	end
+	local row = create("Frame", { Name = "Row_" .. key, BackgroundTransparency = 1, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, self._opt.RowHeight), LayoutOrder = n * 10 }, self.Body)
+	local l = textLabel(def.label or key, self._opt.RowSize, Enum.TextXAlignment.Left)
+	l.Size = UDim2.new(0.62, 0, 1, 0)
+	l.Parent = row
+	local color = def.color or Theme.Value
+	local v = textLabel("0", self._opt.RowSize, Enum.TextXAlignment.Right)
+	v.Size = UDim2.new(0.38, 0, 1, 0)
+	v.Position = UDim2.new(0.62, 0, 0, 0)
+	v.TextColor3 = color
+	v.Parent = row
+	local scale = create("UIScale", {}, v)
+	self._rows[key] = { def = def, frame = row, label = l, value = v, scale = scale, color = color, format = def.format }
+	local initial = def.default
+	if initial == nil then initial = (def.format == "text") and "" or 0 end
+	self._values[key] = initial
+	self:_render(key, initial, false)
+	if def.clock then
+		local t0 = os.clock()
+		self._rows[key].format = def.format or "clock"
+		self:Poll(key, 1, function() return os.clock() - t0 end)
+	end
+	return self
+end
+
+function Stats:_render(key, value, animate)
+	local r = self._rows[key]
+	if not r then return end
+	local f = r.format
+	local text
+	if type(f) == "function" then
+		local ok, res = pcall(f, value)
+		text = ok and tostring(res) or tostring(value)
+	elseif f == "clock" then
+		text = formatClock(value)
+	elseif f == "text" then
+		text = tostring(value)
+	elseif type(value) == "number" then
+		text = formatCount(value)
+	else
+		text = tostring(value)
+	end
+	r.value.Text = text
+	if not animate then return end
+	r.value.TextColor3 = Theme.Flash
+	r.scale.Scale = 1.16
+	TweenService:Create(r.value, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { TextColor3 = r.color }):Play()
+	TweenService:Create(r.scale, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+end
+
+function Stats:Set(key, value, color)
+	if self._destroyed then return self end
+	key = tostring(key)
+	local r = self._rows[key]
+	if not r then
+		warn("[UiLib] Stats:Set - no row named '" .. key .. "'")
+		return self
+	end
+	if color then r.color = color end
+	local old = self._values[key]
+	self._values[key] = value
+	self:_render(key, value, old ~= value)
+	return self
+end
+
+function Stats:Increment(key, amount)
+	return self:Set(key, (tonumber(self._values[tostring(key)]) or 0) + (tonumber(amount) or 1))
+end
+
+function Stats:Get(key) return self._values[tostring(key)] end
+
+function Stats:SetMany(values)
+	for k, v in pairs(values) do self:Set(k, v) end
+	return self
+end
+
+function Stats:Reset(keys)
+	if keys then
+		for _, k in ipairs(keys) do self:Set(k, 0) end
+	else
+		for k in pairs(self._rows) do self:Set(k, 0) end
+	end
+	return self
+end
+
+function Stats:SetLabel(key, text)
+	local r = self._rows[tostring(key)]
+	if r then r.label.Text = tostring(text) end
+	return self
+end
+
+function Stats:SetColor(key, color)
+	local r = self._rows[tostring(key)]
+	if r then
+		r.color = color
+		r.value.TextColor3 = color
+	end
+	return self
+end
+
+function Stats:SetTitle(text)
+	if self.Title then self.Title.Text = tostring(text) end
+	return self
+end
+
+function Stats:SetHeaderColor(color)
+	if self.Header then self.Header.BackgroundColor3 = color end
+	return self
+end
+
+function Stats:SetVisible(state)
+	if self.Root then self.Root.Visible = state and true or false end
+	return self
+end
+
+function Stats:Toggle()
+	if self.Root then self.Root.Visible = not self.Root.Visible end
+	return self
+end
+
+function Stats:SetCollapsed(state)
+	self._collapsed = state and true or false
+	if self.Body then self.Body.Visible = not self._collapsed end
+	return self
+end
+
+function Stats:SetPosition(position, anchor)
+	if self.Root then
+		self.Root.AnchorPoint = anchor or self.Root.AnchorPoint
+		self.Root.Position = position
+	end
+	return self
+end
+
+-- every `interval` seconds call producer() and show what it returns
+function Stats:Poll(key, interval, producer)
+	assert(type(producer) == "function", "Poll needs a function")
+	local delay = math.max(0.1, tonumber(interval) or 1)
+	task.spawn(function()
+		while not self._destroyed do
+			local ok, result = pcall(producer)
+			if ok and result ~= nil then self:Set(key, result) end
+			task.wait(delay)
+		end
+	end)
+	return self
+end
+
+function Stats:Destroy()
+	if self._destroyed then return end
+	self._destroyed = true
+	for _, c in ipairs(self._connections) do pcall(function() c:Disconnect() end) end
+	self._connections = {}
+	if self.Gui then pcall(function() self.Gui:Destroy() end) end
+	self.Gui, self.Root, self.Header, self.Body, self.Title = nil, nil, nil, nil, nil
+	if self._id and genv.__CinderStats and genv.__CinderStats[self._id] == self then genv.__CinderStats[self._id] = nil end
+end
+
 --------------------------------------------------------------------------------------------------
 -- Library:CreateWindow
 --------------------------------------------------------------------------------------------------
@@ -2322,6 +2622,7 @@ function Library:Unload()
 	Library.Unloaded = true
 	for _, fn in ipairs(Library._unloadCallbacks) do pcall(fn) end
 	Library._unloadCallbacks = {}
+	for _, p in ipairs(table.clone(Library._stats)) do pcall(function() p:Destroy() end) end
 	local reg = genv.__UiLibWindows
 	if type(reg) == "table" then
 		for _, w in pairs(table.clone(reg)) do pcall(function() w:Destroy() end) end
