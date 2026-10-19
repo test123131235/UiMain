@@ -34,8 +34,8 @@
     Extra field on any control:  save = false -> not stored in configs    path = "A.B.C" -> where it is mirrored inside opts.Target
 
     Window:  Get, Set, SetMany, Values, ApplyTo, OnChange, SetOptions, GetOptions, RunCallbacks, Open, Close, Toggle, IsOpen,
-             SetTitle, SetVisible, Notify, SelectTab, GetTab, SetWatermark, SetWatermarkVisibility, SetKeybindListVisible, Destroy
-    Library: Unload, OnUnload, Notify, SetWatermark, ToggleKeybind (= an Options key picker that opens/closes the menu)
+             SetTitle, SetVisible, Notify, SelectTab, GetTab, Destroy
+    Library: Unload, OnUnload, Notify, ToggleKeybind (= an Options key picker that opens/closes the menu)
 ]]
 
 local cloneref = cloneref or function(i) return i end
@@ -1419,13 +1419,11 @@ function ObjectMethods.AddKeyPicker(self, idx, info)
 		if parent then
 			parent.onSet = function(value)
 				kc.state = value == true
-				window:_refreshKeybindList()
 			end
 			kc.state = window:Get(kc.syncKey) == true
 		end
 	end
 	kc.refresh = display
-	window:_refreshKeybindList()
 	return kc.object
 end
 
@@ -2035,7 +2033,6 @@ function Window:Set(key, value, silent)
 	self:_writeThrough(ctrl, value)
 	pcall(ctrl.render, value)
 	if ctrl.onSet then pcall(ctrl.onSet, value) end
-	if ctrl.kind == "keypicker" then self:_refreshKeybindList() end
 	if silent or old == value then return self end
 	if type(ctrl.def.callback) == "function" then
 		local ok, err = pcall(ctrl.def.callback, value)
@@ -2122,7 +2119,6 @@ function Window:_setKeyState(kc, st)
 		end)
 	end
 	for _, fn in ipairs(kc.clickListeners) do task.spawn(pcall, fn, st) end
-	self:_refreshKeybindList()
 end
 
 function Window:_tip(gui, text)
@@ -2155,84 +2151,6 @@ function Window:_tip(gui, text)
 		if self._tipFrame then self._tipFrame.Visible = false end
 		self._tipFollow = nil
 	end)
-end
-
-function Window:SetWatermark(text)
-	if self._destroyed or not self.Gui then return self end
-	if not self._watermark then
-		local f = create("Frame", {
-			Name = "Watermark", BackgroundColor3 = Theme.Background, BackgroundTransparency = Theme.BackgroundTransparency, BorderSizePixel = 0,
-			AutomaticSize = Enum.AutomaticSize.XY, Size = UDim2.new(0, 0, 0, 0), Position = UDim2.fromOffset(12, 12), ZIndex = 6,
-		}, self.Gui)
-		plainStroke(f, Theme.Ink, 0.35)
-		create("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 4) }, f)
-		local l = textLabel("", 22, Enum.TextXAlignment.Left)
-		l.AutomaticSize = Enum.AutomaticSize.XY
-		l.Size = UDim2.new(0, 0, 0, 0)
-		l.TextColor3 = Theme.Header
-		l.ZIndex = 7
-		l.Parent = f
-		self._watermark, self._watermarkLabel = f, l
-	end
-	self._watermarkLabel.Text = tostring(text)
-	self._watermark.Visible = true
-	return self
-end
-
-function Window:SetWatermarkVisibility(state)
-	if self._watermark then self._watermark.Visible = state and true or false end
-	return self
-end
-
-function Window:SetKeybindListVisible(state)
-	if self._destroyed or not self.Gui then return self end
-	self._keybindListOn = state and true or false
-	if not self._keybindList then
-		local f = create("Frame", {
-			Name = "KeybindList", Visible = false, BackgroundColor3 = Theme.Background, BackgroundTransparency = Theme.BackgroundTransparency,
-			BorderSizePixel = 0, AutomaticSize = Enum.AutomaticSize.XY, Size = UDim2.new(0, 150, 0, 0), AnchorPoint = Vector2.new(0, 0.5),
-			Position = UDim2.new(0, 12, 0.5, 0), ZIndex = 6,
-		}, self.Gui)
-		plainStroke(f, Theme.Ink, 0.35)
-		create("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), PaddingTop = UDim.new(0, 6), PaddingBottom = UDim.new(0, 6) }, f)
-		create("UIListLayout", { FillDirection = Enum.FillDirection.Vertical, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 2) }, f)
-		local t = textLabel("KEYBINDS", 22, Enum.TextXAlignment.Left)
-		t.TextColor3 = Theme.Header
-		t.Size = UDim2.new(1, 0, 0, 20)
-		t.LayoutOrder = 0
-		t.ZIndex = 7
-		t.Parent = f
-		self._keybindList = f
-	end
-	self:_refreshKeybindList()
-	return self
-end
-
-function Window:_refreshKeybindList()
-	local f = self._keybindList
-	if not f or not self._keybindListOn then
-		if f then f.Visible = false end
-		return
-	end
-	for _, c in ipairs(f:GetChildren()) do
-		if c:IsA("TextLabel") and c.Name == "Entry" then c:Destroy() end
-	end
-	local count = 0
-	for i, kc in ipairs(self._keypickers) do
-		local v = self._values[kc.key]
-		if v and not kc.noUI and v[1] ~= "None" then
-			count += 1
-			local active = (v[2] == "Always") or kc.state == true
-			local l = textLabel("[" .. v[1] .. "] " .. tostring(kc.name) .. " (" .. v[2] .. ")", 20, Enum.TextXAlignment.Left)
-			l.Name = "Entry"
-			l.Size = UDim2.new(1, 0, 0, 18)
-			l.LayoutOrder = i
-			l.TextColor3 = active and Theme.Accent or Theme.Muted
-			l.ZIndex = 7
-			l.Parent = f
-		end
-	end
-	f.Visible = count > 0
 end
 
 -- open / close -----------------------------------------------------------------------------------
@@ -2421,13 +2339,6 @@ function Library:Notify(a, b, c)
 	end
 end
 
-function Library:SetWatermark(text)
-	if Library._last then Library._last:SetWatermark(text) end
-end
-
-function Library:SetWatermarkVisibility(state)
-	if Library._last then Library._last:SetWatermarkVisibility(state) end
-end
 
 Library.FormatNumber = formatNumber
 return Library
