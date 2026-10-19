@@ -38,7 +38,7 @@
     Library: Unload, OnUnload, Notify, ToggleKeybind, CreateStats
 
     ---- Stats panels (pop-out windows with  label ..... value  rows) -----------------------------------
-    local Stats = Library:CreateStats({ Title = "Killer", Color = Color3.fromRGB(188,58,52), Width = 270,
+    local Stats = Library:CreateStats({ Title = "Killer", Color = Color3.fromRGB(240, 190, 40), Width = 270,
         Rows = { { key = "uptime", label = "Uptime", clock = true }, { key = "kills", label = "Kills", color = Color3.fromRGB(255,132,226) } } })
     Stats:AddStat("deaths", "Deaths", { Color = Color3.fromRGB(255,90,90) })      -- add rows any time
     Stats:Set("kills", 5)  Stats:Increment("kills")  Stats:Get("kills")  Stats:Reset()  Stats:SetMany({ kills = 1 })
@@ -2078,7 +2078,7 @@ function Library:CreateStats(opts)
 		TitleSize = opts.TitleSize or 26, RowSize = opts.RowSize or 21,
 		Position = opts.Position or UDim2.new(1, -12, 0.5, 0), AnchorPoint = opts.AnchorPoint or Vector2.new(1, 0.5),
 		Draggable = opts.Draggable ~= false, Collapsible = opts.Collapsible ~= false,
-		Color = opts.Color or Color3.fromRGB(188, 58, 52), DisplayOrder = opts.DisplayOrder or 12,
+		Color = opts.Color or Color3.fromRGB(240, 190, 40), DisplayOrder = opts.DisplayOrder or 12,
 	}
 	self._rows, self._order, self._values, self._connections, self._destroyed = {}, 0, {}, {}, false
 
@@ -2120,6 +2120,7 @@ function Library:CreateStats(opts)
 	addEdge(header, Theme.Ink, 1)
 	local title = textLabel(self._opt.Title, self._opt.TitleSize, Enum.TextXAlignment.Left)
 	title.Name = "Title"
+	title.TextColor3 = Color3.fromRGB(30, 24, 18)
 	title.Size = UDim2.new(1, -16, 1, 0)
 	title.Position = UDim2.new(0, 10, 0, 0)
 	title.ZIndex = 2
