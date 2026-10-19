@@ -34,7 +34,9 @@
     Extra field on any control:  save = false -> not stored in configs    path = "A.B.C" -> where it is mirrored inside opts.Target
 
     Window:  Get, Set, SetMany, Values, ApplyTo, OnChange, SetOptions, GetOptions, RunCallbacks, Open, Close, Toggle, IsOpen,
-             SetTitle, SetVisible, Notify, SelectTab, GetTab, Destroy
+             SetTitle, SetToggleIcon, SetVisible, Notify, SelectTab, GetTab, Destroy
+    Open/close square:  CreateWindow{ ToggleIcon = "rbxassetid://123" } (or ToggleImage / just the number)  -> picture instead of the letter;
+                        ToggleIconBackground = false removes the dark square behind it;  Window:SetToggleIcon(nil) goes back to text
     Library: Unload, OnUnload, Notify, ToggleKeybind, CreateStats
 
     ---- Stats panels (pop-out windows with  label ..... value  rows) -----------------------------------
@@ -98,7 +100,8 @@ Library.Defaults = {
 	ToggleSize = 60,
 	AlwaysShowLauncher = true, -- launcher square stays visible while the window is open
 	ToggleText = nil,
-	ToggleIcon = nil, -- "rbxassetid://..."
+	ToggleIcon = nil, -- picture on the open/close square: "rbxassetid://123" or just 123 (alias: ToggleImage). nil = text
+	ToggleIconBackground = true, -- false = no dark square behind the picture (for pictures with their own shape)
 	ToggleKeyCode = nil, -- Enum.KeyCode.RightShift
 	StartOpen = false,
 	Draggable = true,
@@ -891,7 +894,7 @@ function Container:AddInput(a, b)
 		PlaceholderColor3 = Theme.Muted, TextXAlignment = Enum.TextXAlignment.Left, ClearTextOnFocus = false, ClipsDescendants = true, Text = "",
 	}, well)
 	local maxLength = tonumber(def.MaxLength or def.maxLength)
-	local liveUpdate = def.Finished == false
+	local liveUpdate = def.Finished == false or (lin and def.Finished ~= true) -- Linoria: the callback runs while typing unless Finished = true
 	local function render(v)
 		if box:IsFocused() then return end
 		box.Text = v == nil and "" or tostring(v)
@@ -1504,24 +1507,57 @@ function Window:_buildToggleButton()
 	addEdge(btn, Theme.Ink, 1)
 	hoverGlow(btn, btn, Theme.Flash, 0.6)
 	hoverScale(btn, btn, 1.1)
-	if self._opt.ToggleIcon then
+	self:SetToggleIcon(self._opt.ToggleIcon or self._opt.ToggleImage)
+	self:_makeDraggable(btn, btn, function(moved)
+		if not moved then self:Toggle() end
+	end)
+end
+
+-- the little square that opens / closes the menu: a picture ("rbxassetid://123", or just the number) or, with nil, a letter / text
+local function assetUrl(v)
+	if type(v) == "number" then return "rbxassetid://" .. tostring(math.floor(v)) end
+	if type(v) == "string" then
+		v = string.gsub(v, "^%s+", "")
+		v = string.gsub(v, "%s+$", "")
+		if v == "" then return nil end
+		if string.match(v, "^%d+$") then return "rbxassetid://" .. v end
+		return v
+	end
+	return nil
+end
+
+function Window:SetToggleIcon(image)
+	local btn = self.Launcher
+	if not btn then return self end
+	local url = assetUrl(image)
+	self._opt.ToggleIcon = url
+	for _, name in ipairs({ "Icon", "LauncherText" }) do
+		local old = btn:FindFirstChild(name)
+		if old then old:Destroy() end
+	end
+	local size = self._opt.ToggleSize
+	if url then
+		local backing = self._opt.ToggleIconBackground ~= false
 		btn.BackgroundColor3 = Color3.new(0, 0, 0)
-		btn.BackgroundTransparency = 0.35
-		create("ImageLabel", { Name = "Icon", BackgroundTransparency = 1, Image = self._opt.ToggleIcon, ScaleType = Enum.ScaleType.Fit, Size = UDim2.fromScale(1, 1), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 2 }, btn)
+		btn.BackgroundTransparency = backing and 0.35 or 1
+		create("ImageLabel", {
+			Name = "Icon", BackgroundTransparency = 1, Image = url, ScaleType = Enum.ScaleType.Fit,
+			Size = UDim2.new(1, -8, 1, -8), Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 2,
+		}, btn)
 	else
 		local text = self._opt.ToggleText
 		if type(text) ~= "string" or text == "" then
 			text = string.upper(string.sub(tostring(self._opt.Title), 1, 1))
 		end
+		btn.BackgroundColor3 = Theme.Header
 		btn.BackgroundTransparency = 0.1
 		local t = textLabel(text, math.floor(size * 0.52), Enum.TextXAlignment.Center)
+		t.Name = "LauncherText"
 		t.Size = UDim2.fromScale(1, 1)
 		t.ZIndex = 2
 		t.Parent = btn
 	end
-	self:_makeDraggable(btn, btn, function(moved)
-		if not moved then self:Toggle() end
-	end)
+	return self
 end
 
 function Window:_layoutDivider()
