@@ -495,7 +495,7 @@ local function buttonDef(a, b)
 	local d = table.clone(a or {})
 	local lin = (d.label == nil and d.callback == nil)
 	if d.label == nil then d.label = d.Text end
-	if d.callback == nil then d.callback = d.Func end
+	if d.callback == nil then d.callback = d.Callback or d.Func end
 	if d.tooltip == nil then d.tooltip = d.Tooltip end
 	if d.doubleClick == nil then d.doubleClick = d.DoubleClick end
 	return d, lin
@@ -1275,6 +1275,13 @@ function Tab:AddGroupbox(title, side)
 	local g = newGroup(self, content, frame, title)
 	if not (side == "Left" or side == "Right") then g._stacked = false end
 	return g
+end
+-- Feral style: Tab:AddSection("Name", "Left"|"Right") makes a groupbox (without a side it is just a heading)
+function Tab:AddSection(title, side)
+	if side == "Left" or side == "Right" or side == "left" or side == "right" then
+		return self:AddGroupbox(title, (string.lower(side) == "left") and "Left" or "Right")
+	end
+	return Container.AddSection(self, title)
 end
 function Tab:AddLeftGroupbox(title) return self:AddGroupbox(title, "Left") end
 function Tab:AddRightGroupbox(title) return self:AddGroupbox(title, "Right") end
@@ -2380,10 +2387,12 @@ function Library:CreateWindow(opts)
 	genv.Toggles, genv.Options = self.Toggles, self.Options
 
 	self:_build()
+	Library.Holder = self.Gui
 	return self
 end
 
 -- Linoria / Feral style helpers on the library itself ------------------------------------------------------
+genv.__UiLibLibrary = Library
 Library._unloadCallbacks = {}
 Library.Unloaded = false
 Library.Toggles, Library.Options = {}, {}
