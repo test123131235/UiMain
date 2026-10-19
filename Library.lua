@@ -2120,9 +2120,9 @@ function Library:CreateStats(opts)
 	addEdge(header, Theme.Ink, 1)
 	local title = textLabel(self._opt.Title, self._opt.TitleSize, Enum.TextXAlignment.Left)
 	title.Name = "Title"
-	title.TextColor3 = Color3.fromRGB(30, 24, 18)
+	title.TextColor3 = Color3.new(1, 1, 1)
 	local tstroke = title:FindFirstChildOfClass("UIStroke")
-	if tstroke then tstroke.Color = Color3.new(1, 1, 1); tstroke.Transparency = 0; tstroke.Thickness = 1.5 end
+	if tstroke then tstroke.Color = Color3.new(0, 0, 0); tstroke.Transparency = 0; tstroke.Thickness = 1.5 end
 	title.Size = UDim2.new(1, -16, 1, 0)
 	title.Position = UDim2.new(0, 10, 0, 0)
 	title.ZIndex = 2
