@@ -7,6 +7,14 @@
     SM:BuildConfigTab("Config")          -- or SM:BuildConfigTab(existingTab)
     SM:LoadAutoload()                    -- call at the END of your script
 
+    Linoria / Feral style (no .new needed, uses the last window you created):
+        SaveManager:SetLibrary(Library)
+        SaveManager:IgnoreThemeSettings()
+        SaveManager:SetIgnoreIndexes({ "Key1", "Key2" })
+        SaveManager:SetFolder("MyHub/Game")
+        SaveManager:BuildConfigSection(tabOrSubTabOrGroupbox)
+        SaveManager:LoadAutoloadConfig()
+
     Files:   <Folder>/<name>.json              configs
              <Folder>/autoload_<Username>.txt  per-account autoload (falls back to <Folder>/autoload.txt)
     No filesystem in the executor -> configs are kept in memory for the session.
@@ -26,6 +34,15 @@ local hasFS = type(fs.write) == "function" and type(fs.read) == "function"
 
 local function clean(name)
 	return (string.gsub(string.gsub(string.gsub(tostring(name or ""), "[^%w%-_ ]", ""), "^%s+", ""), "%s+$", ""))
+end
+
+local function cleanPath(name)
+	local parts = {}
+	for part in string.gmatch(tostring(name or ""), "[^/\\]+") do
+		part = clean(part)
+		if part ~= "" then parts[#parts + 1] = part end
+	end
+	return table.concat(parts, "/")
 end
 
 local function ensureFolder(path)
@@ -56,7 +73,7 @@ function SaveManager.new(window, opts)
 	opts = opts or {}
 	local self = setmetatable({}, SaveManager)
 	self.Window = window
-	self.Folder = clean(opts.Folder or window.Folder or "UiLib")
+	self.Folder = cleanPath(opts.Folder or window.Folder or "UiLib")
 	if self.Folder == "" then self.Folder = "UiLib" end
 	self.User = clean(Players.LocalPlayer and Players.LocalPlayer.Name or "Player")
 	self.Ignore = {}
@@ -223,17 +240,13 @@ function SaveManager:LoadAutoload()
 end
 
 -- ready-made UI ----------------------------------------------------------------------------------
-function SaveManager:BuildConfigTab(tabOrName)
+-- cfg / auto / danger are containers (tab, sub tab or groupbox); headings = true puts section headings between them
+function SaveManager:_populate(cfg, auto, danger, headings)
 	local win = self.Window
-	local tab = tabOrName
-	if tab == nil or type(tab) == "string" then
-		tab = win:AddTab(tab or "Config")
-	end
-	self._tab = tab
 
-	tab:AddSection("Configs")
-	tab:AddDropdown({ key = "__sm.selected", label = "Config", options = self:List(), save = false, path = false })
-	tab:AddInput({ key = "__sm.name", label = "Name", placeholder = "new config name", save = false, path = false })
+	if headings then cfg:AddSection("Configs") end
+	cfg:AddDropdown({ key = "__sm.selected", label = "Config", options = self:List(), save = false, path = false })
+	cfg:AddInput({ key = "__sm.name", label = "Name", placeholder = "new config name", save = false, path = false })
 
 	local function refresh()
 		win:SetOptions("__sm.selected", self:List())
@@ -244,7 +257,7 @@ function SaveManager:BuildConfigTab(tabOrName)
 		return clean(win:Get("__sm.selected"))
 	end
 
-	tab:AddButton({ label = "Save", callback = function()
+	cfg:AddButton({ label = "Save", callback = function()
 		local ok, res = self:Save(target())
 		self:_say(ok and "Saved" or "Save failed", tostring(res))
 		if ok then
@@ -253,27 +266,27 @@ function SaveManager:BuildConfigTab(tabOrName)
 			win:Set("__sm.name", "", true)
 		end
 	end })
-	tab:AddButton({ label = "Load", colour = Color3.fromRGB(90, 170, 110), callback = function()
+	cfg:AddButton({ label = "Load", colour = Color3.fromRGB(90, 170, 110), callback = function()
 		local ok, res = self:Load(clean(win:Get("__sm.selected")))
 		self:_say(ok and "Loaded" or "Load failed", tostring(res))
 	end })
-	tab:AddButton({ label = "Refresh list", colour = win.Theme and win.Theme.Neutral or Color3.fromRGB(60, 60, 78), callback = refresh })
+	cfg:AddButton({ label = "Refresh list", colour = win.Theme and win.Theme.Neutral or Color3.fromRGB(60, 60, 78), callback = refresh })
 
-	tab:AddSection("Autoload")
-	tab:AddLabel("Every account can use a different autoload config.")
-	tab:AddButton({ label = "Set as autoload", colour = Color3.fromRGB(60, 60, 78), callback = function()
+	if headings then auto:AddSection("Autoload") end
+	auto:AddLabel("Every account can use a different autoload config.")
+	auto:AddButton({ label = "Set as autoload", colour = Color3.fromRGB(60, 60, 78), callback = function()
 		local n = clean(win:Get("__sm.selected"))
 		if n == "" then self:_say("Autoload", "pick a config first") return end
 		self:SetAutoload(n)
 		self:_say("Autoload", "'" .. n .. "' will load on start")
 	end })
-	tab:AddButton({ label = "Clear autoload", colour = Color3.fromRGB(60, 60, 78), callback = function()
+	auto:AddButton({ label = "Clear autoload", colour = Color3.fromRGB(60, 60, 78), callback = function()
 		self:ClearAutoload()
 		self:_say("Autoload", "cleared")
 	end })
 
-	tab:AddSection("Danger")
-	tab:AddButton({ label = "Delete selected", colour = Color3.fromRGB(235, 51, 90), callback = function()
+	if headings then danger:AddSection("Danger") end
+	danger:AddButton({ label = "Delete selected", colour = Color3.fromRGB(235, 51, 90), callback = function()
 		local n = clean(win:Get("__sm.selected"))
 		if n == "" then self:_say("Delete", "pick a config first") return end
 		local ok, res = self:Delete(n)
@@ -284,9 +297,91 @@ function SaveManager:BuildConfigTab(tabOrName)
 		end
 	end })
 
-	local auto = self:GetAutoload()
-	if auto then win:Set("__sm.selected", auto, true) end
+	local autoName = self:GetAutoload()
+	if autoName then win:Set("__sm.selected", autoName, true) end
+end
+
+function SaveManager:BuildConfigTab(tabOrName)
+	local win = self.Window
+	local tab = tabOrName
+	if tab == nil or type(tab) == "string" then
+		tab = win:AddTab(tab or "Config")
+	end
+	self._tab = tab
+	self:_populate(tab, tab, tab, true)
 	return tab
+end
+
+-- Linoria / Feral style ------------------------------------------------------------------------------
+-- These can be called on the module itself (SaveManager:SetFolder(...)); the first call that needs a window
+-- turns the module into an instance bound to Library's most recent window.
+local function ensure(self)
+	if rawget(self, "Window") then return self end
+	local lib = rawget(self, "Library") or genv.__UiLibLibrary
+	local win = lib and lib._last
+	assert(win, "SaveManager: create a window first (and call SaveManager:SetLibrary(Library))")
+	local inst = SaveManager.new(win, { Folder = rawget(self, "_folder") })
+	for k, v in pairs(inst) do rawset(self, k, v) end
+	local pending = rawget(self, "_pendingIgnore")
+	if pending then self:SetIgnore(pending) end
+	return self
+end
+
+function SaveManager:SetLibrary(lib)
+	rawset(self, "Library", lib)
+	return self
+end
+
+function SaveManager:IgnoreThemeSettings()
+	-- there are no theme controls in the menu, nothing to ignore
+	return self
+end
+
+function SaveManager:SetIgnoreIndexes(list)
+	if rawget(self, "Window") then
+		self:SetIgnore(list)
+	else
+		local pending = rawget(self, "_pendingIgnore") or {}
+		for _, k in ipairs(list) do pending[#pending + 1] = k end
+		rawset(self, "_pendingIgnore", pending)
+	end
+	return self
+end
+
+function SaveManager:SetFolder(folder)
+	folder = cleanPath(folder)
+	if folder == "" then folder = "UiLib" end
+	if rawget(self, "Window") then
+		self.Folder = folder
+		genv.__SaveManagerMemory = genv.__SaveManagerMemory or {}
+		genv.__SaveManagerMemory[folder] = genv.__SaveManagerMemory[folder] or { configs = {}, autoload = {} }
+		self._mem = genv.__SaveManagerMemory[folder]
+	else
+		rawset(self, "_folder", folder)
+	end
+	return self
+end
+
+-- target: a tab / sub tab (gets two groupboxes) or a groupbox (everything goes inside it)
+function SaveManager:BuildConfigSection(target)
+	ensure(self)
+	if type(target) ~= "table" then
+		return self:BuildConfigTab(target)
+	end
+	if type(target.AddGroupbox) == "function" then
+		local left = target:AddGroupbox("Configs", "Left")
+		local right = target:AddGroupbox("Autoload", "Right")
+		self._tab = target
+		self:_populate(left, right, right, false)
+		return target
+	end
+	self:_populate(target, target, target, true)
+	return target
+end
+
+function SaveManager:LoadAutoloadConfig()
+	ensure(self)
+	return self:LoadAutoload()
 end
 
 return SaveManager
