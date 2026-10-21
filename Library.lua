@@ -664,17 +664,36 @@ local function makePopup(window, row, baseHeight, px, pw)
 	plainStroke(list)
 	create("UIListLayout", { FillDirection = Enum.FillDirection.Vertical, SortOrder = Enum.SortOrder.LayoutOrder }, list)
 
-	local popup = { List = list, Open = false, Count = 0, Arrow = nil }
-	local function h() return math.min(popup.Count, 8) * 24 end
+	-- search bar (shown above the options when the dropdown is searchable: Searchable = true, or 8+ options unless Searchable = false)
+	local SEARCH_H = 26
+	local searchWell = newWell(24)
+	searchWell.Name = "Search"
+	searchWell.Visible = false
+	searchWell.ZIndex = 3
+	searchWell.Size = UDim2.new(pw, 0, 0, 24)
+	searchWell.Position = UDim2.new(px, 0, 0, baseHeight + 2)
+	searchWell.Parent = row
+	local searchBox = create("TextBox", {
+		Name = "Field", BackgroundTransparency = 1, BorderSizePixel = 0, Size = UDim2.new(1, -14, 1, 0), Position = UDim2.new(0, 7, 0, 0), AutoLocalize = false,
+		FontFace = Library.FontFace, TextSize = math.floor(25 * (Library.TextScale or 1) + 0.5), TextColor3 = Theme.Value, PlaceholderText = "Search...",
+		PlaceholderColor3 = Theme.Muted, TextXAlignment = Enum.TextXAlignment.Left, ClearTextOnFocus = false, ClipsDescendants = true, Text = "", ZIndex = 4,
+	}, searchWell)
+
+	local popup = { List = list, Open = false, Count = 0, Shown = 0, Arrow = nil, Search = searchBox, SearchEnabled = false }
+	local function h() return math.min(popup.Shown, 8) * 24 end
 	function popup.resize()
-		row.Size = UDim2.new(1, 0, 0, baseHeight + (popup.Open and h() + 4 or 0))
+		local extra = popup.SearchEnabled and SEARCH_H or 0
+		row.Size = UDim2.new(1, 0, 0, baseHeight + (popup.Open and h() + 4 + extra or 0))
+		list.Position = UDim2.new(px, 0, 0, baseHeight + extra)
 		list.Size = UDim2.new(pw, 0, 0, popup.Open and h() or 0)
+		searchWell.Visible = popup.Open and popup.SearchEnabled
 	end
 	function popup.set(state)
 		state = state and popup.Count > 0
 		if popup.Open == state then return end
 		popup.Open = state
 		list.Visible = state
+		if not state and searchBox.Text ~= "" then searchBox.Text = "" end
 		if popup.Arrow then popup.Arrow.Text = state and "^" or "v" end
 		popup.resize()
 		if state then
@@ -747,7 +766,25 @@ function Container:AddDropdown(a, b)
 	local popup = makePopup(window, row, baseH, stacked and 0 or 0.42, stacked and 1 or 0.58)
 	popup.Arrow = arrow
 	popup.Count = #options
+	popup.Shown = #options
 	local buttons = {}
+	local optionRows = {}
+	local function applyFilter()
+		local q = string.lower(popup.Search.Text)
+		local shown = 0
+		for _, name in ipairs(options) do
+			local bt = optionRows[name]
+			if bt then
+				local ok = q == "" or string.find(string.lower(name), q, 1, true) ~= nil
+				bt.Visible = ok
+				if ok then shown += 1 end
+			end
+		end
+		popup.Shown = shown
+		popup.List.CanvasPosition = Vector2.new(0, 0)
+		popup.resize()
+	end
+	popup.Search:GetPropertyChangedSignal("Text"):Connect(applyFilter)
 
 	local function isSelected(name, v)
 		if multi then return type(v) == "table" and v[name] == true end
@@ -763,7 +800,13 @@ function Container:AddDropdown(a, b)
 			if c:IsA("TextButton") then c:Destroy() end
 		end
 		buttons = {}
+		optionRows = {}
+		if popup.Search.Text ~= "" then popup.Search.Text = "" end
 		popup.Count = #options
+		popup.Shown = #options
+		local searchable = def.Searchable
+		if searchable == nil then searchable = def.searchable end
+		popup.SearchEnabled = searchable == true or (searchable ~= false and #options >= 8)
 		for i, name in ipairs(options) do
 			local bt = create("TextButton", { Name = "Option_" .. name, Text = "", AutoButtonColor = false, BackgroundTransparency = 1, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 24), LayoutOrder = i }, popup.List)
 			local t = textLabel(name, 25)
@@ -772,6 +815,7 @@ function Container:AddDropdown(a, b)
 			t.TextTruncate = Enum.TextTruncate.AtEnd
 			t.Parent = bt
 			buttons[name] = t
+			optionRows[name] = bt
 			hoverRow(bt)
 			bt.MouseButton1Click:Connect(function()
 				if multi then
